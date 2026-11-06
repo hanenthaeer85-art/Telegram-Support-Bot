@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Telegram Relay Bot"
+description = "A lightweight Arabic setup and operations guide for a Python Telegram bot that relays user messages to an administrator and routes replies back to the correct user."
+version = "1.0.0"
+id = "artifacts/telegram-relay"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21671
+
+[services.development]
+run = "pnpm --filter @workspace/telegram-relay run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/telegram-relay", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/telegram-relay/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21671"
+BASE_PATH = "/"
