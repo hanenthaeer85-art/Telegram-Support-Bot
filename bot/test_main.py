@@ -222,6 +222,42 @@ class ReplyRoutingTests(unittest.TestCase):
         self.assertEqual(admin_id, ADMIN_ID)
         self.assertIn("تعذر إيصال هذا الرد", notice)
 
+    def test_retry_after_temporary_copy_failure_does_not_duplicate_notice(self) -> None:
+        update = user_update(update_id=30, user_id=404, message_id=64)
+        self.api.copy_error = TelegramApiError(
+            "temporary Telegram error", http_status=500
+        )
+
+        with self.assertRaises(TelegramApiError):
+            process_update(
+                api=self.api,  # type: ignore[arg-type]
+                store=self.store,
+                admin_id=ADMIN_ID,
+                update=update,
+            )
+
+        self.assertEqual(len(self.api.sent_messages), 1)
+        delivery = self.store.get_delivery(30)
+        self.assertIsNotNone(delivery)
+        notice_id = int(delivery["notice_message_id"])  # type: ignore[index]
+
+        self.store.close()
+        self.store = RelayStore(self.database_path)
+        self.addCleanup(self.store.close)
+        self.api.copy_error = None
+
+        process_update(
+            api=self.api,  # type: ignore[arg-type]
+            store=self.store,
+            admin_id=ADMIN_ID,
+            update=update,
+        )
+
+        self.assertEqual(len(self.api.sent_messages), 1)
+        self.assertEqual(len(self.api.copied_messages), 1)
+        self.process_admin_reply(update_id=31, target_message_id=notice_id)
+        self.assertEqual(self.api.copied_messages[-1][0], 404)
+
 
 if __name__ == "__main__":
     unittest.main()
