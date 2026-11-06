@@ -1,14 +1,25 @@
 from __future__ import annotations
 
+import io
+import json
 import tempfile
+import urllib.error
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
-from bot.main import RelayStore, TelegramApiError, process_update
+from bot.main import (
+    RelayStore,
+    TelegramApiError,
+    TelegramClient,
+    process_update,
+    run_polling,
+)
 
 
 ADMIN_ID = 9000
+FAKE_BOT_TOKEN = "123456789:FAKE_TEST_TOKEN_NOT_REAL"
 
 
 class FakeTelegramClient:
@@ -65,6 +76,83 @@ def admin_reply(update_id: int, reply_to_message_id: int) -> dict[str, Any]:
             "text": "Admin response",
         },
     }
+
+
+class StopAfterWait:
+    """Stops the polling loop after its first retry wait."""
+
+    def __init__(self) -> None:
+        self.stopped = False
+
+    def is_set(self) -> bool:
+        return self.stopped
+
+    def wait(self, _timeout: int) -> bool:
+        self.stopped = True
+        return True
+
+
+class EmptyStore:
+    def last_update_id(self) -> int:
+        return -1
+
+
+class TokenRedactionTests(unittest.TestCase):
+    def http_error_with_token(self) -> urllib.error.HTTPError:
+        response = json.dumps(
+            {
+                "ok": False,
+                "description": f"Unauthorized token: {FAKE_BOT_TOKEN}",
+            }
+        ).encode("utf-8")
+        return urllib.error.HTTPError(
+            url=f"https://api.telegram.org/bot{FAKE_BOT_TOKEN}/getMe",
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=io.BytesIO(response),
+        )
+
+    def test_http_error_redacts_fake_token_from_exception_text(self) -> None:
+        with patch(
+            "bot.main.urllib.request.urlopen",
+            side_effect=self.http_error_with_token(),
+        ):
+            with self.assertRaises(TelegramApiError) as raised:
+                TelegramClient(FAKE_BOT_TOKEN).get_me()
+
+        self.assertNotIn(FAKE_BOT_TOKEN, str(raised.exception))
+
+    def test_network_error_redacts_fake_token_from_exception_text(self) -> None:
+        network_error = urllib.error.URLError(
+            f"Connection failed for /bot{FAKE_BOT_TOKEN}/getUpdates"
+        )
+        with patch(
+            "bot.main.urllib.request.urlopen",
+            side_effect=network_error,
+        ):
+            with self.assertRaises(TelegramApiError) as raised:
+                TelegramClient(FAKE_BOT_TOKEN).get_updates(offset=0)
+
+        self.assertNotIn(FAKE_BOT_TOKEN, str(raised.exception))
+
+    def test_polling_log_does_not_include_fake_token(self) -> None:
+        stop_event = StopAfterWait()
+        with (
+            patch("bot.main.STOP_EVENT", stop_event),
+            patch(
+                "bot.main.urllib.request.urlopen",
+                side_effect=self.http_error_with_token(),
+            ),
+            self.assertLogs("telegram_relay", level="ERROR") as captured,
+        ):
+            run_polling(
+                api=TelegramClient(FAKE_BOT_TOKEN),
+                store=EmptyStore(),  # type: ignore[arg-type]
+                admin_id=ADMIN_ID,
+            )
+
+        self.assertNotIn(FAKE_BOT_TOKEN, "\n".join(captured.output))
 
 
 class ReplyRoutingTests(unittest.TestCase):
