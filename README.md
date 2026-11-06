@@ -25,17 +25,40 @@
 python -m bot.main
 ```
 
-## تشغيل مستمر على استضافة سحابية
+## النشر على Render
 
-هذا عامل طويل التشغيل يستخدم Telegram long polling ولا يحتاج إلى منفذ HTTP أو نطاق عام. أمر التشغيل موجود في `Procfile`:
+هذا عامل طويل التشغيل يستخدم Telegram long polling، لذلك أنشئ **Background Worker** وليس Web Service أو Cron Job؛ لا يحتاج العامل إلى منفذ HTTP أو نطاق عام. الأمر في `Procfile` هو `python -m bot.main`.
 
-```text
-worker: python -m bot.main
-```
+1. من لوحة Render اختر **New + → Background Worker**، ثم اربط مستودع المشروع والفرع المطلوب.
+2. اختر بيئة Python، واجعل **Build Command**:
 
-أنشئ خدمة Worker/Background Worker لدى مزود الاستضافة، واستخدم الأمر `python -m bot.main` مع متغيري البيئة أعلاه. شغّل نسخة واحدة فقط من العامل حتى لا تتنافس عمليتا polling على البوت نفسه.
+   ```sh
+   pip install -r requirements.txt
+   ```
 
-افتراضيًا تُحفظ قاعدة البيانات في `data/telegram-relay.sqlite3`. اربط هذا المسار بقرص تخزين دائم في الاستضافة، أو عيّن `BOT_DB_PATH` إلى مسار دائم مثل `/data/telegram-relay.sqlite3`. قاعدة SQLite المحلية لا تُعدّ تخزينًا دائمًا إذا كان مزود الاستضافة يحذف ملفات الخدمة عند إعادة النشر.
+   واجعل **Start Command**:
+
+   ```sh
+   python -m bot.main
+   ```
+
+3. من **Environment** أضف المتغيرات التالية. أدخل قيمة `BOT_TOKEN` مباشرة في لوحة Render، ولا تضعها في الشفرة أو ملفات المشروع أو أوامر الطرفية أو السجلات:
+
+   | المفتاح | القيمة |
+   | --- | --- |
+   | `BOT_TOKEN` | رمز البوت، ويُعامل كسر |
+   | `ADMIN_ID` | معرّف Telegram الرقمي للمشرف |
+   | `BOT_DB_PATH` | `/var/data/telegram-relay.sqlite3` |
+
+4. أرفق **Persistent Disk** بالخدمة، إما أثناء إنشائها من **Advanced** أو لاحقًا من صفحة **Disk**. استخدم مسار التركيب `/var/data` واختر حجمًا مناسبًا. الأقراص الدائمة في Render تتطلب خدمة مدفوعة. لا يكفي ضبط `BOT_DB_PATH` وحده؛ يجب أن يكون الملف داخل مسار القرص المركّب.
+5. من **Compute → Manual Scaling** اضبط عدد النسخ على **1**، واترك التوسّع التلقائي معطّلًا. القرص مرتبط بنسخة خدمة واحدة ولا يمكن توسيع الخدمة ذات القرص إلى عدة نسخ؛ لا تنشئ عاملًا ثانيًا يستخدم رمز البوت نفسه، لأن ذلك يجعل عمليتي polling تتنافسان على التحديثات.
+6. احفظ الإعدادات وانشر الخدمة. في السجلات، تحقق من ظهور رسالة بدء العامل ومسار قاعدة البيانات، من دون طباعة متغيرات البيئة. لإعادة تشغيله يدويًا استخدم **Deploys → Manual Deploy → Restart service**؛ يستقبل العامل `SIGTERM` ويتوقف وينظف اتصال SQLite، بينما يبقى الملف داخل القرص الدائم بعد إعادة التشغيل والنشر.
+
+يكتب SQLite ملفات قاعدة البيانات وملفات WAL المرافقة لها تحت `/var/data`، لذلك تبقى بيانات ربط الرسائل محفوظة ما دام هذا المسار على القرص. أي ملفات خارج مسار القرص تظل مؤقتة في Render.
+
+مراجع Render: [Background Workers](https://render.com/docs/background-workers)، [Persistent Disks](https://render.com/docs/disks)، [Environment Variables and Secrets](https://render.com/docs/configure-environment-variables)، [Scaling](https://render.com/docs/scaling).
+
+للاستضافة محليًا، المسار الافتراضي هو `data/telegram-relay.sqlite3`، ويمكن ضبطه عبر `BOT_DB_PATH`. لا تعتمد على هذا المسار الافتراضي في خدمة سحابية تحذف ملفاتها عند إعادة النشر.
 
 ## ملاحظات التشغيل
 

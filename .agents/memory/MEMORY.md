@@ -1,0 +1,1 @@
+- [Worker hosting](render-hosting.md) — The Telegram polling worker is deployed on Render.

@@ -15,8 +15,9 @@ from typing import Any
 
 LOGGER = logging.getLogger("telegram_relay")
 STOP_EVENT = threading.Event()
-POLL_TIMEOUT_SECONDS = 30
-HTTP_TIMEOUT_SECONDS = 45
+# Leave room for Render's 30-second shutdown grace period after SIGTERM.
+POLL_TIMEOUT_SECONDS = 20
+HTTP_TIMEOUT_SECONDS = 25
 
 
 class TelegramApiError(Exception):
