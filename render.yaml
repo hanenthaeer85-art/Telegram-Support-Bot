@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: telegram-relay-bot
+    runtime: python
+    numInstances: 1
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m bot.main
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: BOT_DB_PATH
+        value: /var/data/telegram-relay.sqlite3
+    disk:
+      name: telegram-relay-data
+      mountPath: /var/data
+      sizeGB: 1
